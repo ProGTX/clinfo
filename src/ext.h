@@ -4,9 +4,23 @@
 #ifndef _EXT_H
 #define _EXT_H
 
+/* We will use the deprecated clGetExtensionFunctionAddress,
+ * so let the headers know that we don't care about it being deprecated.
+ * The standard CL_USE_DEPRECATED_OPENCL_1_1_APIS define apparently
+ * doesn't work for macOS, so we'll just tell the compiler to not
+ * warn about deprecated functions.
+ * A more correct solution would be to suppress the warning only around the
+ * clGetExtensionFunctionAddress call, but honestly I just cleaned up that
+ * piece of code. And I'm actually wondering if it even makes sense to
+ * build that part of the code on macOS: does anybody actually use
+ * ocl-icd as OpenCL dispatcher on macOS?
+ */
+
 #ifdef __APPLE__
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include <OpenCL/opencl.h>
 #else
+#define CL_USE_DEPRECATED_OPENCL_1_1_APIS
 #include <CL/cl.h>
 #endif
 
@@ -71,6 +85,9 @@ typedef cl_bitfield         cl_device_svm_capabilities;
 /* cl_khr_fp16 */
 #define CL_DEVICE_HALF_FP_CONFIG			0x1033
 
+/* cl_khr_il_program */
+#define CL_DEVICE_IL_VERSION_KHR			0x105B
+
 /* cl_khr_terminate_context */
 #define CL_DEVICE_TERMINATE_CAPABILITY_KHR		0x200F
 
@@ -116,6 +133,17 @@ typedef cl_bitfield cl_device_terminate_capability_khr;
 #define CL_DEVICE_GFXIP_MAJOR_AMD			0x404A
 #define CL_DEVICE_GFXIP_MINOR_AMD			0x404B
 #define CL_DEVICE_AVAILABLE_ASYNC_QUEUES_AMD		0x404C
+/* These two are undocumented */
+#define CL_DEVICE_MAX_REAL_TIME_COMPUTE_QUEUES_AMD	0x404D
+#define CL_DEVICE_MAX_REAL_TIME_COMPUTE_UNITS_AMD	0x404E
+/* These were added in v4 of the extension, but have values lower than
+ * than the older ones, and spanning around the cl_ext_atomic_counters_*
+ * define
+ */
+#define CL_DEVICE_PREFERRED_WORK_GROUP_SIZE_AMD         0x4030
+#define CL_DEVICE_MAX_WORK_GROUP_SIZE_AMD               0x4031
+#define CL_DEVICE_PREFERRED_CONSTANT_BUFFER_SIZE_AMD    0x4033
+#define CL_DEVICE_PCIE_ID_AMD                           0x4034
 
 #ifndef CL_DEVICE_TOPOLOGY_TYPE_PCIE_AMD
 #define CL_DEVICE_TOPOLOGY_TYPE_PCIE_AMD		1
@@ -129,6 +157,10 @@ typedef union
 
 /* cl_amd_offline_devices */
 #define CL_CONTEXT_OFFLINE_DEVICES_AMD			0x403F
+
+/* cl_amd_copy_buffer_p2p */
+#define CL_DEVICE_NUM_P2P_DEVICES_AMD			0x4088
+#define CL_DEVICE_P2P_DEVICES_AMD			0x4089
 
 /* cl_ext_device_fission */
 #define cl_ext_device_fission				1

@@ -18,13 +18,6 @@
 # define DL_MODULE ((void*)0) /* This would be RTLD_DEFAULT */
 #endif
 
-/* ISO C forbids assignments between function pointers and void pointers,
- * but POSIX allows it. To compile without warnings even in -pedantic mode,
- * we use this horrible trick to get a function address from
- * clGetExtensionFunctionAddress
- */
-#define PTR_FUNC_PTR *(void**)&
-
 /* Load STDC format macros (PRI*), or define them
  * for those crappy, non-standard compilers
  */
@@ -584,12 +577,14 @@ struct device_info_checks {
 	char has_fission[22];
 	char has_atomic_counters[26];
 	char has_image2d_buffer[27];
+	char has_il_program[18];
 	char has_intel_local_thread[30];
 	char has_intel_AME[36];
 	char has_intel_AVC_ME[43];
 	char has_intel_planar_yuv[20];
 	char has_intel_required_subgroup_size[32];
 	char has_altera_dev_temp[29];
+	char has_p2p[23];
 	char has_spir[12];
 	char has_qcom_ext_host_ptr[21];
 	char has_simultaneous_sharing[30];
@@ -612,12 +607,14 @@ DEFINE_EXT_CHECK(arm_svm)
 DEFINE_EXT_CHECK(fission)
 DEFINE_EXT_CHECK(atomic_counters)
 DEFINE_EXT_CHECK(image2d_buffer)
+DEFINE_EXT_CHECK(il_program)
 DEFINE_EXT_CHECK(intel_local_thread)
 DEFINE_EXT_CHECK(intel_AME)
 DEFINE_EXT_CHECK(intel_AVC_ME)
 DEFINE_EXT_CHECK(intel_planar_yuv)
 DEFINE_EXT_CHECK(intel_required_subgroup_size)
 DEFINE_EXT_CHECK(altera_dev_temp)
+DEFINE_EXT_CHECK(p2p)
 DEFINE_EXT_CHECK(spir)
 DEFINE_EXT_CHECK(qcom_ext_host_ptr)
 DEFINE_EXT_CHECK(simultaneous_sharing)
@@ -663,6 +660,19 @@ int dev_is_gpu_amd(const struct device_info_checks *chk)
 	return dev_is_gpu(chk) && dev_has_amd(chk);
 }
 
+/* Device supports cl_amd_device_attribute_query v4 */
+int dev_has_amd_v4(const struct device_info_checks *chk)
+{
+	/* We don't actually have a criterion ot check if the device
+	 * supports a specific version of an extension, so for the time
+	 * being rely on them being GPU devices with cl_amd_device_attribute_query
+	 * and supporting OpenCL 2.0 or later
+	 * TODO FIXME tune criteria
+	 */
+	return dev_is_gpu(chk) && dev_has_amd(chk) && dev_is_20(chk);
+}
+
+
 int dev_has_svm(const struct device_info_checks *chk)
 {
 	return dev_is_20(chk) || dev_has_amd_svm(chk);
@@ -681,6 +691,11 @@ int dev_has_cache(const struct device_info_checks *chk)
 int dev_has_lmem(const struct device_info_checks *chk)
 {
 	return chk->lmemtype != CL_NONE;
+}
+
+int dev_has_il(const struct device_info_checks *chk)
+{
+	return dev_is_21(chk) || dev_has_il_program(chk);
 }
 
 int dev_has_images(const struct device_info_checks *chk)
@@ -734,12 +749,14 @@ void identify_device_extensions(const char *extensions, struct device_info_check
 	if (dev_has_atomic_counters(chk))
 		CHECK_EXT(atomic_counters, cl_ext_atomic_counters_32);
 	CHECK_EXT(image2d_buffer, cl_khr_image2d_from_buffer);
+	CHECK_EXT(il_program, cl_khr_il_program);
 	CHECK_EXT(intel_local_thread, cl_intel_exec_by_local_thread);
 	CHECK_EXT(intel_AME, cl_intel_advanced_motion_estimation);
 	CHECK_EXT(intel_AVC_ME, cl_intel_device_side_avc_motion_estimation);
 	CHECK_EXT(intel_planar_yuv, cl_intel_planar_yuv);
 	CHECK_EXT(intel_required_subgroup_size, cl_intel_required_subgroup_size);
 	CHECK_EXT(altera_dev_temp, cl_altera_device_temperature);
+	CHECK_EXT(p2p, cl_amd_copy_buffer_p2p);
 	CHECK_EXT(qcom_ext_host_ptr, cl_qcom_ext_host_ptr);
 	CHECK_EXT(simultaneous_sharing, cl_intel_simultaneous_sharing);
 	CHECK_EXT(subgroup_named_barrier, cl_khr_subgroup_named_barrier);
@@ -1717,6 +1734,28 @@ int device_info_terminate_capability(cl_device_id dev, cl_device_info param, con
 	return had_error;
 }
 
+int device_info_p2p_dev_list(cl_device_id dev, cl_device_info param, const char *pname,
+	const struct device_info_checks* UNUSED(chk))
+{
+	cl_device_id *val = NULL;
+	size_t szval = 0, numval = 0;
+	GET_VAL_ARRAY;
+	if (!had_error) {
+		size_t cursor = 0;
+		szval = 0;
+		for (cursor= 0; cursor < numval; ++cursor) {
+			if (szval > 0) {
+				strbuf[szval] = ' ';
+				++szval;
+			}
+			szval += snprintf(strbuf + szval, bufsz - szval - 1, "0x%p", (void*)val[cursor]);
+		}
+	}
+	show_strbuf(pname, 0);
+	free(val);
+	return had_error;
+}
+
 
 /*
  * Device info traits
@@ -1749,9 +1788,6 @@ struct device_info_traits dinfo_traits[] = {
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_EXTENSIONS, "Device Extensions", str_get), NULL },
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_TYPE, "Device Type", devtype), NULL },
 
-	{ CLINFO_BOTH, DINFO(CL_DEVICE_AVAILABLE, "Device Available", bool), NULL },
-
-	{ CLINFO_BOTH, DINFO(CL_DEVICE_PROFILE, "Device Profile", str), NULL },
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_BOARD_NAME_AMD, "Device Board Name (AMD)", str), dev_has_amd },
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_TOPOLOGY_AMD, "Device Topology (AMD)", devtopo_amd), dev_has_amd },
 
@@ -1759,6 +1795,11 @@ struct device_info_traits dinfo_traits[] = {
 	{ CLINFO_HUMAN, DINFO(CL_DEVICE_PCI_BUS_ID_NV, "Device Topology (NV)", devtopo_nv), dev_has_nv },
 	{ CLINFO_RAW, DINFO(CL_DEVICE_PCI_BUS_ID_NV, "Device PCI bus (NV)", int), dev_has_nv },
 	{ CLINFO_RAW, DINFO(CL_DEVICE_PCI_SLOT_ID_NV, "Device PCI slot (NV)", int), dev_has_nv },
+
+	{ CLINFO_BOTH, DINFO(CL_DEVICE_PROFILE, "Device Profile", str), NULL },
+	{ CLINFO_BOTH, DINFO(CL_DEVICE_AVAILABLE, "Device Available", bool), NULL },
+	{ CLINFO_BOTH, DINFO(CL_DEVICE_COMPILER_AVAILABLE, "Compiler Available", bool), NULL },
+	{ CLINFO_BOTH, DINFO(CL_DEVICE_LINKER_AVAILABLE, "Linker Available", bool), dev_is_12 },
 
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_MAX_COMPUTE_UNITS, "Max compute units", int), NULL },
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_SIMD_PER_COMPUTE_UNIT_AMD, "SIMD per compute unit (AMD)", int), dev_is_gpu_amd },
@@ -1793,8 +1834,10 @@ struct device_info_traits dinfo_traits[] = {
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_MAX_WORK_ITEM_SIZES, "Max work item sizes", szptr), NULL },
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_MAX_WORK_GROUP_SIZE, "Max work group size", sz), NULL },
 
-	{ CLINFO_BOTH, DINFO(CL_DEVICE_COMPILER_AVAILABLE, "Compiler Available", bool), NULL },
-	{ CLINFO_BOTH, DINFO(CL_DEVICE_LINKER_AVAILABLE, "Linker Available", bool), dev_is_12 },
+	/* cl_amd_device_attribute_query v4 */
+	{ CLINFO_BOTH, DINFO(CL_DEVICE_PREFERRED_WORK_GROUP_SIZE_AMD, "Preferred work group size (AMD)", sz), dev_has_amd_v4 },
+	{ CLINFO_BOTH, DINFO(CL_DEVICE_MAX_WORK_GROUP_SIZE_AMD, "Max work group size (AMD)", sz), dev_has_amd_v4 },
+
 	{ CLINFO_BOTH, DINFO(CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, "Preferred work group size multiple", wg), dev_has_compiler },
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_WARP_SIZE_NV, "Warp size (NV)", int), dev_has_nv },
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_WAVEFRONT_WIDTH_AMD, "Wavefront width (AMD)", int), dev_is_gpu_amd },
@@ -1905,8 +1948,9 @@ struct device_info_traits dinfo_traits[] = {
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_REGISTERS_PER_BLOCK_NV, "Registers per block (NV)", int), dev_has_nv },
 
 	/* Constant memory */
-	{ CLINFO_BOTH, DINFO(CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE, "Max constant buffer size", mem), NULL },
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_MAX_CONSTANT_ARGS, "Max number of constant args", int), NULL },
+	{ CLINFO_BOTH, DINFO(CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE, "Max constant buffer size", mem), NULL },
+	{ CLINFO_BOTH, DINFO(CL_DEVICE_PREFERRED_CONSTANT_BUFFER_SIZE_AMD, "Preferred constant buffer size (AMD)", mem_sz), dev_has_amd_v4 },
 
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_MAX_PARAMETER_SIZE, "Max size of kernel argument", mem), NULL },
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_MAX_ATOMIC_COUNTERS_EXT, "Max number of atomic counters", sz), dev_has_atomic_counters },
@@ -1925,10 +1969,14 @@ struct device_info_traits dinfo_traits[] = {
 
 	/* Interop */
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_PREFERRED_INTEROP_USER_SYNC, "Prefer user sync for interop", bool), dev_is_12 },
-	{ CLINFO_BOTH, DINFO(CL_DEVICE_NUM_SIMULTANEOUS_INTEROPS_INTEL, "Number of simulataneous interops (Intel)", int), dev_has_simultaneous_sharing },
+	{ CLINFO_BOTH, DINFO(CL_DEVICE_NUM_SIMULTANEOUS_INTEROPS_INTEL, "Number of simultaneous interops (Intel)", int), dev_has_simultaneous_sharing },
 	/* TODO: this needs defines for the possible values of the context interops,
-	{ CLINFO_BOTH, DINFO(CL_DEVICE_SIMULTANEOUS_INTEROPS_INTEL, "Simulataneous interops", interop_list), dev_has_simultaneous_sharing },
+	{ CLINFO_BOTH, DINFO(CL_DEVICE_SIMULTANEOUS_INTEROPS_INTEL, "Simultaneous interops", interop_list), dev_has_simultaneous_sharing },
 	 */
+
+	/* P2P buffer copy */
+	{ CLINFO_BOTH, DINFO(CL_DEVICE_NUM_P2P_DEVICES_AMD, "Number of P2P devices (AMD)", int), dev_has_p2p },
+	{ CLINFO_BOTH, DINFO(CL_DEVICE_P2P_DEVICES_AMD, "P2P devices (AMD)", p2p_dev_list), dev_has_p2p },
 
 	/* Profiling resolution */
 	{ CLINFO_BOTH, DINFO_SFX(CL_DEVICE_PROFILING_TIMER_RESOLUTION, "Profiling timer resolution", "ns", sz), NULL },
@@ -1942,11 +1990,13 @@ struct device_info_traits dinfo_traits[] = {
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_KERNEL_EXEC_TIMEOUT_NV, INDENT "Kernel execution timeout (NV)", bool), dev_has_nv },
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_GPU_OVERLAP_NV, "Concurrent copy and kernel execution (NV)", bool), dev_has_nv },
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_ATTRIBUTE_ASYNC_ENGINE_COUNT_NV, INDENT "Number of async copy engines", int), dev_has_nv },
-	/* TODO FIXME Current drivers don't seem to respond to this, should probably be queried based on driver version,
-	 * or maybe it depends on some other device property?
-	{ CLINFO_BOTH, DINFO(CL_DEVICE_AVAILABLE_ASYNC_QUEUES_AMD, INDENT "Number of async queues (AMD)", int), dev_is_gpu_amd },
-	 */
-	{ CLINFO_BOTH, DINFO(CL_DEVICE_IL_VERSION, INDENT "IL version", str), dev_is_21, },
+	{ CLINFO_BOTH, DINFO(CL_DEVICE_AVAILABLE_ASYNC_QUEUES_AMD, INDENT "Number of async queues (AMD)", int), dev_has_amd_v4 },
+	/* TODO FIXME undocumented, experimental */
+	{ CLINFO_BOTH, DINFO(CL_DEVICE_MAX_REAL_TIME_COMPUTE_QUEUES_AMD, INDENT "Max real-time compute queues (AMD)", int), dev_has_amd_v4 },
+	{ CLINFO_BOTH, DINFO(CL_DEVICE_MAX_REAL_TIME_COMPUTE_UNITS_AMD, INDENT "Max real-time compute units (AMD)", int), dev_has_amd_v4 },
+
+	/* TODO: this should tell if it's being done due to the device being 2.1 or due to it having the extension */
+	{ CLINFO_BOTH, DINFO(CL_DEVICE_IL_VERSION, INDENT "IL version", str), dev_has_il },
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_SPIR_VERSIONS, INDENT "SPIR versions", str), dev_has_spir },
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_PRINTF_BUFFER_SIZE, "printf() buffer size", mem_sz), dev_is_12 },
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_BUILT_IN_KERNELS, "Built-in kernels", str), dev_is_12 },
@@ -2603,7 +2653,9 @@ typedef enum {
 } cl_icdl_info;
 
 /* Function pointer to the ICD loader info function */
-cl_int (*clGetICDLoaderInfoOCLICD)(cl_icdl_info, size_t, void*, size_t*);
+
+typedef cl_int (*icdl_info_fn_ptr)(cl_icdl_info, size_t, void*, size_t*);
+icdl_info_fn_ptr clGetICDLoaderInfoOCLICD;
 
 /* We want to auto-detect the OpenCL version supported by the ICD loader.
  * To do this, we will progressively find symbols introduced in new APIs,
@@ -2646,11 +2698,17 @@ struct icdl_info_traits linfo_traits[] = {
 	LINFO(CL_ICDL_OCL_VERSION, "Profile")
 };
 
-/* GCC < 4.6 does not support the diagnostic push _inside_ the function,
- * so we have to put it outside
+/* The ICD loader info function must be retrieved via clGetExtensionFunctionAddress,
+ * which returns a void pointer.
+ * ISO C forbids assignments between function pointers and void pointers,
+ * but POSIX allows it. To compile without warnings even in -pedantic mode,
+ * we take advantage of the fact that we _can_ do the conversion via
+ * pointers-to-pointers. This is supported on most compilers, except
+ * for some rather old GCC versions whose strict aliasing rules are
+ * too strict. Disable strict aliasing warnings for these compilers.
  */
 #if defined __GNUC__ && ((__GNUC__*10 + __GNUC_MINOR__) < 46)
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
 #endif
 
 void oclIcdProps(void)
@@ -2670,27 +2728,15 @@ void oclIcdProps(void)
 
 
 	/* We find the clGetICDLoaderInfoOCLICD extension address, and use it to query
-	 * the ICD loader properties. It should be noted however that
-	 * clGetExtensionFunctionAddress is marked deprecated as of OpenCL 1.2, so
-	 * to use it and compile cleanly we need disable the relevant warning.
+	 * the ICD loader properties.
 	 * It should be noted that in this specific case we cannot replace the
 	 * call to clGetExtensionFunctionAddress with a call to the superseding function
 	 * clGetExtensionFunctionAddressForPlatform because the extension is in the
 	 * loader itself, not in a specific platform.
 	 */
 
-#ifdef _MSC_VER
-#pragma warning(suppress : 4996)
-#elif defined __GNUC__ && ((__GNUC__*10 + __GNUC_MINOR__) >= 46)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-
-	PTR_FUNC_PTR clGetICDLoaderInfoOCLICD = clGetExtensionFunctionAddress("clGetICDLoaderInfoOCLICD");
-
-#if defined __GNUC__ && ((__GNUC__*10 + __GNUC_MINOR__) >= 46)
-#pragma GCC diagnostic pop
-#endif
+	void *ptrHack = clGetExtensionFunctionAddress("clGetICDLoaderInfoOCLICD");
+	clGetICDLoaderInfoOCLICD = *(icdl_info_fn_ptr*)(&ptrHack);
 
 	if (clGetICDLoaderInfoOCLICD != NULL) {
 		/* TODO think of a sensible header in CLINFO_RAW */
@@ -2742,7 +2788,7 @@ void oclIcdProps(void)
 }
 
 #if defined __GNUC__ && ((__GNUC__*10 + __GNUC_MINOR__) < 46)
-#pragma GCC diagnostic warning "-Wdeprecated-declarations"
+#pragma GCC diagnostic warning "-Wstrict-aliasing"
 #endif
 
 void version(void)
