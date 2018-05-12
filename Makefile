@@ -1,3 +1,10 @@
+# An interesting trick run a shell command:
+# GNU Make uses $(shell cmd), whereas
+# BSD make use $(var:sh), where ${var} holds the command
+OS.exec = uname -s
+OS ?= $(shell $(OS.exec))$(OS.exec:sh)
+OS := $(OS)
+
 # Headers
 
 PROG = clinfo
@@ -5,9 +12,13 @@ MAN = man1/$(PROG).1
 
 HDR =	src/error.h \
 	src/ext.h \
+	src/ctx_prop.h \
 	src/fmtmacros.h \
 	src/memory.h \
 	src/ms_support.h \
+	src/info_loc.h \
+	src/info_ret.h \
+	src/opt_out.h \
 	src/strbuf.h
 
 VPATH = src

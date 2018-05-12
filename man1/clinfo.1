@@ -1,4 +1,4 @@
-.TH CLINFO 1 "2017-10-25" "clinfo 2.2.17.10.25"
+.TH CLINFO 1 "2018-04-06" "clinfo 2.2.18.04.06"
 
 .SH NAME
 
@@ -17,6 +17,20 @@ available on the system and the devices they expose.
 .B clinfo
 accepts the following options:
 .TP 2
+.BR -a ", " --all-props
+try to retrieve all properties, even those not officially supported
+(e.g. because they require specific extensions), but only show them
+if the property could be retrieved successfully; see also the
+.B LIMITATIONS
+section below; note that even though this may reveal hidden properties,
+there is no guarantee that the returned values are meaningful, nor that
+the corresponding feature is actually available at all;
+.TP
+.BR -A ", " --always-all-props
+like
+.BR -a ,
+but also show errors;
+.TP
 .B --human
 produce human-friendly output; this is the default (except
 as noted below);
@@ -81,6 +95,9 @@ for the atomic counter extension;
 .TP
 .B cl_amd_device_attribute_query
 for AMD-specific device attributes;
+.TP
+.B cl_amd_object_metadata
+to show the maximum number of keys supported by the platform;
 .TP
 .B cl_amd_offline_devices
 to show offline devices exposed by the platform, if requested (see
@@ -190,6 +207,11 @@ is experimental (see also
 .BR LIMITATIONS ).
 
 .P
+Support for the interop lists exposed by
+.B cl_intel_simultaneous_sharing
+is experimental.
+
+.P
 The highest OpenCL version supported by the ICD loader is detected
 with some trivial heuristics (symbols found); a notice is output
 if this is lower than the highest platform OpenCL version, or
@@ -222,7 +244,7 @@ Properties which are known to be affected by these limitations include:
 documented in v3 of the
 .B cl_amd_device_attribute_query
 extension specification as being the global free memory in KBytes, without
-any explanation given on why there are two values.
+any explanation given on why there are two values;
 .TP
 .B CL_DEVICE_AVAILABLE_ASYNC_QUEUES_AMD
 documented in v3 of the
@@ -230,15 +252,18 @@ documented in v3 of the
 extension specification, but not reported by drivers supporting other v3
 properties. This has now been enabled for drivers
 .I assumed
-to support v4 of the same extension.
+to support v4 of the same extension;
 .TP
-.B CL_DEVICE_SIMULTANEOUS_INTEROPS_INTEL
+.B CL_DEVICE_TERMINATE_CAPABILITY_KHR
 exposed by the
-.B cl_intel_simultaneous_sharing
-extension is not reported, due to lack of knowledge on the possible
-values the list elements can have.
+.B cl_khr_terminate_context
+has changed value between OpenCL 1.x and 2.x, and it's
+.I allegedly
+a bitfield, whose values are however not defined anywhere.
 
 .SH BUGS
+
+.SS General
 
 .P
 Please report any issues on
@@ -246,3 +271,55 @@ Please report any issues on
 the project tracker on GitHub
 .UE .
 
+.SS Segmentation faults
+
+.P
+Faulty OpenCL platforms may cause segmentation faults in
+.B clinfo
+during the information gathering phase, sometimes even
+before any output is shown. There is very little
+.B clinfo
+can do to avoid this. If you see this happening,
+try disabling all platforms and then re-enabling
+them one by one until you experience the crash again.
+Chances are the last platform you enabled is defective
+in some way (either by being incompatible with other
+platforms or by missing necessary components and
+not handling their absence gracefully).
+
+.P
+To selectively enable/disable platforms, one
+way is to move or rename the
+.I *.icd
+files present in
+.I /etc/OpenCL/vendors/
+and then restoring them one by one. When using
+the free-software
+.B ocl-icd
+OpenCL library, a similar effect can be achieved
+by setting the
+.B OPENCL_VENDOR_PATH
+or
+.B OCL_ICD_VENDORS
+environment variables, as documented in
+.BR libOpenCL (7).
+Other implementations of
+.B libOpenCL
+are known to support
+.B OPENCL_VENDOR_PATH
+too.
+
+.TP 2
+.B Example
+find /etc/OpenCL/vendors/ -name '*.icd' | while read OPENCL_VENDOR_PATH ; do clinfo -l > /dev/null ; echo "$? ${OPENCL_VENDOR_PATH}" ; done
+
+.P
+This one liner will run
+.B clinfo -l
+for each platform individually (hiding the normal output),
+and report the
+.I .icd
+path prefixed by
+.B 0
+for successfull runs, and a non-zero value for faulty
+platforms.

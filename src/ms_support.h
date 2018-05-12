@@ -4,12 +4,20 @@
  * TODO could be improved by version-checking for C99 support
  */
 
+#ifndef MS_SUPPORT
+#define MS_SUPPORT
+
 // disable warning about unsafe strncpy vs strncpy_s usage
 #pragma warning(disable : 4996)
 // disable warning about constant conditional expressions
 #pragma warning(disable : 4127)
 // disable warning about non-constant aggregate initializer
-#pragma warning(disable:  4204)
+#pragma warning(disable : 4204)
+
+// disable warning about global shadowing
+#pragma warning(disable : 4459)
+// disable warning about parameter shadowing
+#pragma warning(disable : 4457)
 
 // Suppress warning about unused parameters. The macro definition
 // _should_ work, but it doesn't on VS2012 (cl 17), may be a version thing
@@ -55,3 +63,5 @@ inline int c99_snprintf(char* str, size_t size, const char* format, ...)
 // And no __func__ either
 
 #define __func__ __FUNCTION__
+
+#endif

@@ -1,8 +1,8 @@
 /* Include OpenCL header, and define OpenCL extensions, since what is and is not
  * available in the official headers is very system-dependent */
 
-#ifndef _EXT_H
-#define _EXT_H
+#ifndef EXT_H
+#define EXT_H
 
 /* We will use the deprecated clGetExtensionFunctionAddress,
  * so let the headers know that we don't care about it being deprecated.
@@ -41,6 +41,7 @@
 #ifndef CL_VERSION_2_0
 #define CL_DEVICE_MAX_READ_WRITE_IMAGE_ARGS             0x104C
 #define CL_DEVICE_MAX_GLOBAL_VARIABLE_SIZE              0x104D
+#define CL_DEVICE_QUEUE_ON_HOST_PROPERTIES              0x102A
 #define CL_DEVICE_QUEUE_ON_DEVICE_PROPERTIES            0x104E
 #define CL_DEVICE_QUEUE_ON_DEVICE_PREFERRED_SIZE        0x104F
 #define CL_DEVICE_QUEUE_ON_DEVICE_MAX_SIZE              0x1050
@@ -78,6 +79,8 @@ typedef cl_bitfield         cl_device_svm_capabilities;
 #define CL_PLATFORM_ICD_SUFFIX_KHR			0x0920
 #define CL_PLATFORM_NOT_FOUND_KHR			-1001
 
+/* cl_amd_object_metadata */
+#define CL_PLATFORM_MAX_KEYS_AMD			0x403C
 
 /* cl_khr_fp64 */
 #define CL_DEVICE_DOUBLE_FP_CONFIG			0x1032
@@ -89,7 +92,8 @@ typedef cl_bitfield         cl_device_svm_capabilities;
 #define CL_DEVICE_IL_VERSION_KHR			0x105B
 
 /* cl_khr_terminate_context */
-#define CL_DEVICE_TERMINATE_CAPABILITY_KHR		0x200F
+#define CL_DEVICE_TERMINATE_CAPABILITY_KHR_1x		0x200F
+#define CL_DEVICE_TERMINATE_CAPABILITY_KHR_2x		0x2031
 
 /* TODO: I cannot find official definitions for these,
  * so I'm currently extrapolating them from the specification
@@ -217,5 +221,13 @@ typedef cl_ulong  cl_device_partition_property_ext;
 
 /* cl_intel_required_subgroup_size */
 #define CL_DEVICE_SUB_GROUP_SIZES_INTEL			0x4108
+
+/* clGeICDLoaderInfoOCLICD */
+typedef enum {
+	CL_ICDL_OCL_VERSION=1,
+	CL_ICDL_VERSION=2,
+	CL_ICDL_NAME=3,
+	CL_ICDL_VENDOR=4,
+} cl_icdl_info;
 
 #endif
