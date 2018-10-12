@@ -49,9 +49,8 @@ style='float: right'>
 
 Building requires an OpenCL SDK (or at least OpenCL headers and
 development files), and the standard build environment for the platform.
-No special build system is used (autotools, CMake, meson, ninja, etc),
-as I feel adding more dependencies for such a simple program would be
-excessive. Simply running `make` at the project root should work.
+Simply running `make` at the project root should work,
+though the project can also be configured using CMake.
 
 ## Windows support
 
@@ -59,6 +58,10 @@ The application can usually be built in Windows too (support for which
 required way more time than I should have spent, really, but I digress),
 by running `make` in a Developer Command Prompt for Visual Studio,
 provided an OpenCL SDK (such as the Intel or AMD one) is installed.
+
+An easier option is to use CMake -
+especially VS2017 can just open the CMakeLists.txt
+and configure everything automatically. 
 
 Precompiled Windows executable are available as artefacts of the
 AppVeyor CI.
