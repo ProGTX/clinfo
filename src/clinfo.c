@@ -325,7 +325,7 @@ static const char* sources[] = {
 	"#define GWO(type) global type* restrict\n",
 	"#define GRO(type) global const type* restrict\n",
 	"#define BODY int i = get_global_id(0); out[i] = in1[i] + in2[i]\n",
-	"#define _KRN(T, N) void kernel sum##N(GWO(T##N) out, GRO(T##N) in1, GRO(T##N) in2) { BODY; }\n",
+	"#define _KRN(T, N) kernel void sum##N(GWO(T##N) out, GRO(T##N) in1, GRO(T##N) in2) { BODY; }\n",
 	"#define KRN(N) _KRN(float, N)\n",
 	"KRN()\n/* KRN(2)\nKRN(4)\nKRN(8)\nKRN(16) */\n",
 };
@@ -1408,26 +1408,26 @@ device_info_core_ids(struct device_info_ret *ret,
 	DEV_FETCH(cl_ulong, val);
 
 	if (!ret->err) {
-		/* The value is a bitfield where each set bit corresponds to a code ID
+		/* The value is a bitfield where each set bit corresponds to a core ID
 		 * value that can be returned by the device-side function. We print them
 		 * here as ranges, such as 0-4, 8-12 */
-		set_separator(empty_str);
 		size_t szval = 0;
 		int range_start = -1;
 		int cur_bit = 0;
+		set_separator(empty_str);
 #define CORE_ID_END 64
 		do {
 			/* Find the start of the range */
-			while ((cur_bit < CORE_ID_END) && !(val >> cur_bit))
+			while ((cur_bit < CORE_ID_END) && !((val >> cur_bit) & 1))
 				++cur_bit;
 			range_start = cur_bit++;
 
 			/* Find the end of the range */
-			while ((cur_bit < CORE_ID_END) && (val >> cur_bit))
+			while ((cur_bit < CORE_ID_END) && ((val >> cur_bit) & 1))
 				++cur_bit;
 
 			/* print the range [range_start, cur_bit[ */
-			if (range_start >= 0) {
+			if (range_start >= 0 && range_start < CORE_ID_END) {
 				szval += snprintf(ret->str.buf + szval, ret->str.sz - szval - 1,
 					"%s%d", sep, range_start);
 				if (cur_bit - range_start > 1)
