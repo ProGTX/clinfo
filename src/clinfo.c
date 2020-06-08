@@ -731,6 +731,7 @@ struct device_info_checks {
 	char has_amd_svm[11];
 	char has_arm_svm[29];
 	char has_arm_core_id[15];
+	char has_arm_job_slots[26];
 	char has_fission[22];
 	char has_atomic_counters[26];
 	char has_image2d_buffer[27];
@@ -748,6 +749,7 @@ struct device_info_checks {
 	char has_subgroup_named_barrier[30];
 	char has_terminate_context[25];
 	cl_uint dev_version;
+	cl_uint p2p_num_devs;
 };
 
 #define DEFINE_EXT_CHECK(ext) cl_bool dev_has_##ext(const struct device_info_checks *chk) \
@@ -762,6 +764,7 @@ DEFINE_EXT_CHECK(amd)
 DEFINE_EXT_CHECK(amd_svm)
 DEFINE_EXT_CHECK(arm_svm)
 DEFINE_EXT_CHECK(arm_core_id)
+DEFINE_EXT_CHECK(arm_job_slots)
 DEFINE_EXT_CHECK(fission)
 DEFINE_EXT_CHECK(atomic_counters)
 DEFINE_EXT_CHECK(image2d_buffer)
@@ -899,6 +902,11 @@ cl_bool dev_has_compiler_11(const struct device_info_checks *chk)
 	return dev_is_11(chk) && dev_has_compiler(chk);
 }
 
+cl_bool dev_has_p2p_devs(const struct device_info_checks *chk)
+{
+	return dev_has_p2p(chk) && chk->p2p_num_devs > 0;
+}
+
 
 void identify_device_extensions(const char *extensions, struct device_info_checks *chk)
 {
@@ -926,6 +934,7 @@ void identify_device_extensions(const char *extensions, struct device_info_check
 	CHECK_EXT(amd_svm, cl_amd_svm);
 	CHECK_EXT(arm_svm, cl_arm_shared_virtual_memory);
 	CHECK_EXT(arm_core_id, cl_arm_core_id);
+	CHECK_EXT(arm_job_slots, cl_arm_job_slot_selection);
 	CHECK_EXT(fission, cl_ext_device_fission);
 	CHECK_EXT(atomic_counters, cl_ext_atomic_counters_64);
 	if (dev_has_atomic_counters(chk))
@@ -956,17 +965,20 @@ void identify_device_extensions(const char *extensions, struct device_info_check
 		loc, "get %s"); \
 	CHECK_SIZE(ret, loc, val, clGetDeviceInfo, (loc)->dev, (loc)->param.dev);
 
+#define _GET_VAL_VALUES(ret, loc) \
+	REALLOC(val, numval, loc->sname); \
+	ret->err = REPORT_ERROR_LOC(ret, \
+		clGetDeviceInfo(loc->dev, loc->param.dev, szval, val, NULL), \
+		loc, "get %s"); \
+	if (ret->err) { free(val); val = NULL; } \
+
 #define _GET_VAL_ARRAY(ret, loc) \
 	ret->err = REPORT_ERROR_LOC(ret, \
 		clGetDeviceInfo(loc->dev, loc->param.dev, 0, NULL, &szval), \
 		loc, "get number of %s"); \
 	numval = szval/sizeof(*val); \
 	if (!ret->err) { \
-		REALLOC(val, numval, loc->sname); \
-		ret->err = REPORT_ERROR_LOC(ret, \
-			clGetDeviceInfo(loc->dev, loc->param.dev, szval, val, NULL), \
-			loc, "get %s"); \
-		if (ret->err) { free(val); val = NULL; } \
+		_GET_VAL_VALUES(ret, loc) \
 	}
 
 #define GET_VAL(ret, loc, field) do { \
@@ -1111,9 +1123,15 @@ device_info_free_mem_amd(struct device_info_ret *ret,
 	const struct info_loc *loc, const struct device_info_checks* UNUSED(chk),
 	const struct opt_out *output)
 {
+	// Apparently, with the introduction of ROCm, CL_DEVICE_GLOBAL_FREE_MEMORY_AMD
+	// returns 1 or 2 values depending on how it's called: if it's called with a
+	// szval < 2*sizeof(size_t), it will only return 1 value, otherwise it will return 2.
+	// At least now these are documented in the ROCm source code: the first value
+	// is the total amount of free memory, and the second is the size of the largest
+	// free block. So let's just manually ask for both values
 	size_t *val = NULL;
-	size_t szval = 0, numval = 0;
-	GET_VAL_ARRAY(ret, loc);
+	size_t numval = 2, szval = numval*sizeof(*val);
+	_GET_VAL_VALUES(ret, loc);
 	if (!ret->err) {
 		size_t cursor = 0;
 		szval = 0;
@@ -1125,8 +1143,8 @@ device_info_free_mem_amd(struct device_info_ret *ret,
 			szval += sprintf(ret->str.buf + szval, "%" PRIuS, val[cursor]);
 			if (output->mode == CLINFO_HUMAN)
 				szval += strbuf_mem(&ret->str, val[cursor]*UINT64_C(1024), szval);
+			ret->value.u64v.s[cursor] = val[cursor];
 		}
-		// TODO: ret->value.??? = val;
 	}
 	free(val);
 }
@@ -1438,6 +1456,46 @@ device_info_core_ids(struct device_info_ret *ret,
 		} while (cur_bit < CORE_ID_END);
 	}
 	ret->value.u64 = val;
+}
+
+/* cl_arm_job_slot_selection */
+void
+device_info_job_slots(struct device_info_ret *ret,
+	const struct info_loc *loc, const struct device_info_checks* UNUSED(chk),
+	const struct opt_out *output)
+{
+	DEV_FETCH(cl_uint, val);
+
+	if (!ret->err) {
+		/* The value is a bitfield where each set bit corresponds to an available job slot.
+		 * We print them here as ranges, such as 0-4, 8-12 */
+		size_t szval = 0;
+		int range_start = -1;
+		int cur_bit = 0;
+		set_separator(empty_str);
+#define JOB_SLOT_END 32
+		do {
+			/* Find the start of the range */
+			while ((cur_bit < JOB_SLOT_END) && !((val >> cur_bit) & 1))
+				++cur_bit;
+			range_start = cur_bit++;
+
+			/* Find the end of the range */
+			while ((cur_bit < JOB_SLOT_END) && ((val >> cur_bit) & 1))
+				++cur_bit;
+
+			/* print the range [range_start, cur_bit[ */
+			if (range_start >= 0 && range_start < JOB_SLOT_END) {
+				szval += snprintf(ret->str.buf + szval, ret->str.sz - szval - 1,
+					"%s%d", sep, range_start);
+				if (cur_bit - range_start > 1)
+					szval += snprintf(ret->str.buf + szval, ret->str.sz - szval - 1,
+						"-%d", cur_bit - 1);
+				set_separator(comma_str);
+			}
+		} while (cur_bit < JOB_SLOT_END);
+	}
+	ret->value.u32 = val;
 }
 
 /* stringify a cl_device_topology_amd */
@@ -1998,12 +2056,16 @@ device_info_terminate_capability(struct device_info_ret *ret,
 
 void
 device_info_p2p_dev_list(struct device_info_ret *ret,
-	const struct info_loc *loc, const struct device_info_checks* UNUSED(chk),
+	const struct info_loc *loc, const struct device_info_checks *chk,
 	const struct opt_out* UNUSED(output))
 {
+	// Contrary to most array values in OpenCL, the AMD platform does not support querying
+	// CL_DEVICE_P2P_DEVICES_AMD with a NULL ptr to get the number of results.
+	// The user is assumed to have queried for the CL_DEVICE_NUM_P2P_DEVICES_AMD first,
+	// and to have allocated the return array beforehand.
 	cl_device_id *val = NULL;
-	size_t szval = 0, numval = 0;
-	GET_VAL_ARRAY(ret, loc);
+	size_t numval = chk->p2p_num_devs, szval = numval*sizeof(*val);
+	_GET_VAL_VALUES(ret, loc);
 	if (!ret->err) {
 		size_t cursor = 0;
 		szval = 0;
@@ -2112,6 +2174,7 @@ struct device_info_traits dinfo_traits[] = {
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_TYPE, "Device Type", devtype), NULL },
 
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_BOARD_NAME_AMD, "Device Board Name (AMD)", str), dev_has_amd },
+	{ CLINFO_BOTH, DINFO(CL_DEVICE_PCIE_ID_AMD, "Device PCI-e ID (AMD)", hex), dev_has_amd },
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_TOPOLOGY_AMD, "Device Topology (AMD)", devtopo_amd), dev_has_amd },
 
 	/* Device Topology (NV) is multipart, so different for HUMAN and RAW */
@@ -2127,6 +2190,8 @@ struct device_info_traits dinfo_traits[] = {
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_MAX_COMPUTE_UNITS, "Max compute units", int), NULL },
 	{ CLINFO_HUMAN, DINFO(CL_DEVICE_COMPUTE_UNITS_BITFIELD, "Available core IDs", core_ids), dev_has_arm_core_id_v2 },
 	{ CLINFO_RAW, DINFO(CL_DEVICE_COMPUTE_UNITS_BITFIELD, "Available core IDs", long), dev_has_arm_core_id_v2 },
+	{ CLINFO_HUMAN, DINFO(CL_DEVICE_JOB_SLOTS_ARM, "Available job slots (ARM)", job_slots), dev_has_arm_job_slots },
+	{ CLINFO_RAW, DINFO(CL_DEVICE_JOB_SLOTS_ARM, "Available job slots (ARM)", int), dev_has_arm_job_slots },
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_SIMD_PER_COMPUTE_UNIT_AMD, "SIMD per compute unit (AMD)", int), dev_is_gpu_amd },
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_SIMD_WIDTH_AMD, "SIMD width (AMD)", int), dev_is_gpu_amd },
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_SIMD_INSTRUCTION_WIDTH_AMD, "SIMD instruction width (AMD)", int), dev_is_gpu_amd },
@@ -2301,7 +2366,7 @@ struct device_info_traits dinfo_traits[] = {
 
 	/* P2P buffer copy */
 	{ CLINFO_BOTH, DINFO(CL_DEVICE_NUM_P2P_DEVICES_AMD, "Number of P2P devices (AMD)", int), dev_has_p2p },
-	{ CLINFO_BOTH, DINFO(CL_DEVICE_P2P_DEVICES_AMD, "P2P devices (AMD)", p2p_dev_list), dev_has_p2p },
+	{ CLINFO_BOTH, DINFO(CL_DEVICE_P2P_DEVICES_AMD, "P2P devices (AMD)", p2p_dev_list), dev_has_p2p_devs },
 
 	/* Profiling resolution */
 	{ CLINFO_BOTH, DINFO_SFX(CL_DEVICE_PROFILING_TIMER_RESOLUTION, "Profiling timer resolution", "ns", sz), NULL },
@@ -2461,6 +2526,9 @@ printDeviceInfo(cl_device_id dev, const struct platform_list *plist, cl_uint p,
 			break;
 		case CL_DEVICE_COMPILER_AVAILABLE:
 			chk.compiler_available = ret.value.b;
+			break;
+		case CL_DEVICE_NUM_P2P_DEVICES_AMD:
+			chk.p2p_num_devs = ret.value.u32;
 			break;
 		default:
 			/* do nothing */
