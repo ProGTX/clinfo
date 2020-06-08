@@ -134,3 +134,14 @@ alt='Build status on AppVeyor'></a></td>
 <td><a href='https://ci.appveyor.com/api/projects/oblomov/clinfo/artifacts/clinfo.exe?job=platform%3a+x64'>64-bit</a></td>
 </tr>
 </table>
+
+
+### Conan
+
+Assuming that you have Conan package manager installed:
+
+1. `conan remote add bincrafters https://api.bintray.com/conan/bincrafters/public-conan`
+2. `mdir build` and `cd build`
+3. `conan install ..`
+4. `cmake ..`
+5. `cmake --build .`
