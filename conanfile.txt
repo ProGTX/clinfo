@@ -1,0 +1,6 @@
+[requires]
+khronos-opencl-headers/20190806@bincrafters/stable
+khronos-opencl-icd-loader/20191007@bincrafters/stable
+
+[generators]
+cmake
