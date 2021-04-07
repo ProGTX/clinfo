@@ -17,7 +17,12 @@ set(HEADERS
   "src/strbuf.h"
 )
 
+include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
+conan_basic_setup()
+
 add_executable(clinfo "${SOURCE_FILE}" "${HEADERS}")
+
+target_link_libraries(clinfo ${CONAN_LIBS})
 
 # Link OpenCL
 include_directories(clinfo ${OpenCL_INCLUDE_DIR})
